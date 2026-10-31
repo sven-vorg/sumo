@@ -5,6 +5,10 @@ set(microsim_trigger_STAT_SRCS
    MSLaneSpeedTrigger.h
    MSChargingStation.h
    MSChargingStation.cpp
+   MSStationaryStorage.h
+   MSStationaryStorage.cpp
+   MSEnergySourcePV.h
+   MSEnergySourcePV.cpp
    MSTriggeredRerouter.cpp
    MSTriggeredRerouter.h
    MSOverheadWire.cpp

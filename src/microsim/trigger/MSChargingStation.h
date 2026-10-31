@@ -24,6 +24,7 @@
 #include <config.h>
 
 #include <list>
+#include <memory>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -38,6 +39,8 @@ class MSLane;
 class MSBusStop;
 class OptionsCont;
 class MSDevice_Battery;
+class MSEnergySourcePV;
+class MSStationaryStorage;
 class Command;
 
 // ===========================================================================
@@ -101,6 +104,15 @@ public:
 
     /// @brief destructor
     ~MSChargingStation();
+
+    /// @brief builds the stationary storage and the PV energy source from the parameters
+    void finishedLoading() override;
+
+    /// @brief Get the stationary storage (nullptr if there is none)
+    MSStationaryStorage* getStationaryStorage() const;
+
+    /// @brief Get the PV energy source (nullptr if there is none)
+    const MSEnergySourcePV* getEnergySourcePV() const;
 
     /// @brief Get charging station's charging power
     double getChargingPower(bool usingFuel) const;
@@ -214,6 +226,12 @@ protected:
 
     static void writeVehicle(OutputDevice& out, const std::vector<Charge>& chargeSteps, int iStart, int iEnd, double charged);
 
+    /// @brief reduce the energy delivered to all charging vehicles in this step to myTotalChargingPower
+    void rebalanceTotalPower(SUMOTime currentTime);
+
+    /// @brief advance PV source and stationary storage by one step (end of time step event)
+    SUMOTime updateStationaryStorage(SUMOTime currentTime);
+
     /// @brief Charging station's nominal charging power per vehicle
     double myNominalChargingPower = 0;
 
@@ -253,7 +271,17 @@ protected:
     std::map<std::string, MSDevice_Battery*> myChargedBatteries;
 
     /// @brief Event for checking at every time-step if myTotalPower has been exceeded
+    /// @note not used with a stationary storage, updateStationaryStorage does the check instead
     Command* myTotalPowerCheckEvent;
+
+    /// @brief stationary storage (nullptr if there is none)
+    std::unique_ptr<MSStationaryStorage> myStationaryStorage;
+
+    /// @brief PV energy source feeding the stationary storage (nullptr if there is none)
+    std::unique_ptr<MSEnergySourcePV> myEnergySourcePV;
+
+    /// @brief energy drawn by the charger (before charging losses) in the current step [Wh]
+    double myEnergyRequestedStep = 0;
 
 
 private:

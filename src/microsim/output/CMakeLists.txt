@@ -36,6 +36,8 @@ set(microsim_output_STAT_SRCS
    MSBatteryExport.h
    MSChargingStationExport.cpp
    MSChargingStationExport.h
+   MSStationaryStorageExport.cpp
+   MSStationaryStorageExport.h
    MSStopOut.cpp
    MSStopOut.h
    MSEmissionExport.cpp

@@ -86,6 +86,7 @@
 #include <microsim/output/MSFCDExport.h>
 #include <microsim/output/MSFullExport.h>
 #include <microsim/output/MSQueueExport.h>
+#include <microsim/output/MSStationaryStorageExport.h>
 #include <microsim/output/MSVTKExport.h>
 #include <microsim/output/MSXMLRawOut.h>
 #include <microsim/output/MSAmitranTrajectories.h>
@@ -1190,6 +1191,16 @@ MSNet::writeOutput() {
     if (OptionsCont::getOptions().isSet("battery-output")) {
         MSBatteryExport::write(OutputDevice::getDeviceByOption("battery-output"), myStep,
                                oc.getInt("battery-output.precision"));
+    }
+
+    // stationary storage dumps
+    if (oc.isSet("stationary-storage-output")) {
+        const SUMOTime period = string2time(oc.getString("stationary-storage-output.period"));
+        const SUMOTime begin = string2time(oc.getString("begin"));
+        if (period <= 0 || (myStep - begin) % period == 0) {
+            MSStationaryStorageExport::write(OutputDevice::getDeviceByOption("stationary-storage-output"), myStep,
+                                             oc.getInt("stationary-storage-output.precision"));
+        }
     }
 
     // charging station aggregated dumps

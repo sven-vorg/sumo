@@ -170,6 +170,13 @@ MSFrame::fillOptions() {
     oc.doRegister("substations-output.precision", new Option_Integer(2));
     oc.addDescription("substations-output.precision", "Output", TL("Write substation values with the given precision (default 2)"));
 
+    oc.doRegister("stationary-storage-output", new Option_FileName());
+    oc.addDescription("stationary-storage-output", "Output", TL("Write data of stationary storages at charging stations"));
+    oc.doRegister("stationary-storage-output.precision", new Option_Integer(6));
+    oc.addDescription("stationary-storage-output.precision", "Output", TL("Write stationary storage values with the given precision (default 6)"));
+    oc.doRegister("stationary-storage-output.period", new Option_String("-1", "TIME"));
+    oc.addDescription("stationary-storage-output.period", "Output", TL("Write stationary storage values with the given period (default every time step); energy flows are summed up over the period"));
+
     oc.doRegister("fcd-output", new Option_FileName());
     oc.addDescription("fcd-output", "Output", TL("Save the Floating Car Data"));
     oc.doRegister("fcd-output.geo", new Option_Bool(false));
@@ -920,6 +927,7 @@ MSFrame::buildStreams() {
     OutputDevice::createDeviceByOption("chargingstations-output", "chargingstations-export");
     OutputDevice::createDeviceByOption("overheadwiresegments-output", "overheadWireSegments-export");
     OutputDevice::createDeviceByOption("substations-output", "substations-export");
+    OutputDevice::createDeviceByOption("stationary-storage-output", "stationary-storage-export");
     OutputDevice::createDeviceByOption("full-output", "full-export", "full_file.xsd");
     OutputDevice::createDeviceByOption("queue-output", "queue-export", "queue_file.xsd", 3);
     OutputDevice::createDeviceByOption("amitran-output", "trajectories", "amitran/trajectories.xsd\" timeStepSize=\"" + toString(STEPS2MS(DELTA_T)));
