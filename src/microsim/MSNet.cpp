@@ -86,7 +86,7 @@
 #include <microsim/output/MSFCDExport.h>
 #include <microsim/output/MSFullExport.h>
 #include <microsim/output/MSQueueExport.h>
-#include <microsim/output/MSStationaryStorageExport.h>
+#include <microsim/output/MSStationaryEnergyStorageExport.h>
 #include <microsim/output/MSVTKExport.h>
 #include <microsim/output/MSXMLRawOut.h>
 #include <microsim/output/MSAmitranTrajectories.h>
@@ -1193,13 +1193,13 @@ MSNet::writeOutput() {
                                oc.getInt("battery-output.precision"));
     }
 
-    // stationary storage dumps
-    if (oc.isSet("stationary-storage-output")) {
-        const SUMOTime period = string2time(oc.getString("stationary-storage-output.period"));
+    // stationary energy storage dumps
+    if (oc.isSet("stationary-energy-storage-output")) {
+        const SUMOTime period = string2time(oc.getString("stationary-energy-storage-output.period"));
         const SUMOTime begin = string2time(oc.getString("begin"));
         if (period <= 0 || (myStep - begin) % period == 0) {
-            MSStationaryStorageExport::write(OutputDevice::getDeviceByOption("stationary-storage-output"), myStep,
-                                             oc.getInt("stationary-storage-output.precision"));
+            MSStationaryEnergyStorageExport::write(OutputDevice::getDeviceByOption("stationary-energy-storage-output"), myStep,
+                                                   oc.getInt("stationary-energy-storage-output.precision"));
         }
     }
 

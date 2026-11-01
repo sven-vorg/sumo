@@ -33,7 +33,7 @@
 #include <microsim/devices/MSDevice_Battery.h>
 #include <microsim/MSNet.h>
 #include "MSEnergySourcePV.h"
-#include "MSStationaryStorage.h"
+#include "MSStationaryEnergyStorage.h"
 #include "MSChargingStation.h"
 
 
@@ -88,19 +88,19 @@ MSChargingStation::~MSChargingStation() {
 void
 MSChargingStation::finishedLoading() {
     MSStoppingPlace::finishedLoading();
-    myStationaryStorage = MSStationaryStorage::buildFromParams(getID(), *this);
+    myStationaryEnergyStorage = MSStationaryEnergyStorage::buildFromParams(getID(), *this);
     myEnergySourcePV = MSEnergySourcePV::buildFromParams(getID(), *this);
-    if (myStationaryStorage != nullptr) {
-        MSNet::getInstance()->getEndOfTimestepEvents()->addEvent(new WrappingCommand<MSChargingStation>(this, &MSChargingStation::updateStationaryStorage));
+    if (myStationaryEnergyStorage != nullptr) {
+        MSNet::getInstance()->getEndOfTimestepEvents()->addEvent(new WrappingCommand<MSChargingStation>(this, &MSChargingStation::updateStationaryEnergyStorage));
     } else if (myEnergySourcePV != nullptr) {
-        WRITE_WARNINGF(TL("ChargingStation '%' has a PV energy source but no stationary storage; the PV energy is ignored (use 'ess.maximumStorageCapacity=\"0\"' for PV without storage)."), getID());
+        WRITE_WARNINGF(TL("ChargingStation '%' has a PV energy source but no stationary energy storage; the PV energy is ignored (use 'ses.maximumStorageCapacity=\"0\"' for PV without storage)."), getID());
     }
 }
 
 
-MSStationaryStorage*
-MSChargingStation::getStationaryStorage() const {
-    return myStationaryStorage.get();
+MSStationaryEnergyStorage*
+MSChargingStation::getStationaryEnergyStorage() const {
+    return myStationaryEnergyStorage.get();
 }
 
 
@@ -184,7 +184,7 @@ MSChargingStation::setChargeDelay(SUMOTime delay) {
 void
 MSChargingStation::setChargeInTransit(bool value) {
     myChargeInTransit = value;
-    if (myTotalChargingPower > 0 && myChargeInTransit && myTotalPowerCheckEvent == nullptr && myStationaryStorage == nullptr) {
+    if (myTotalChargingPower > 0 && myChargeInTransit && myTotalPowerCheckEvent == nullptr && myStationaryEnergyStorage == nullptr) {
         myTotalPowerCheckEvent = new WrappingCommand<MSChargingStation>(this, &MSChargingStation::checkTotalPower);
         MSNet::getInstance()->getEndOfTimestepEvents()->addEvent(myTotalPowerCheckEvent);
     }
@@ -194,7 +194,7 @@ MSChargingStation::setChargeInTransit(bool value) {
 void
 MSChargingStation::setChargingVehicle(bool value) {
     myChargingVehicle = value;
-    if (myTotalChargingPower > 0 && myChargingVehicle && myTotalPowerCheckEvent == nullptr && myStationaryStorage == nullptr) {
+    if (myTotalChargingPower > 0 && myChargingVehicle && myTotalPowerCheckEvent == nullptr && myStationaryEnergyStorage == nullptr) {
         myTotalPowerCheckEvent = new WrappingCommand<MSChargingStation>(this, &MSChargingStation::checkTotalPower);
         MSNet::getInstance()->getEndOfTimestepEvents()->addEvent(myTotalPowerCheckEvent);
     }
@@ -208,7 +208,7 @@ MSChargingStation::setTotalChargingPower(double totalPower) {
     }
     const bool hadLimit = myTotalChargingPower > 0;
     myTotalChargingPower = totalPower;
-    if (!hadLimit && (myChargeInTransit || myChargingVehicle) && myTotalPowerCheckEvent == nullptr && myStationaryStorage == nullptr) {
+    if (!hadLimit && (myChargeInTransit || myChargingVehicle) && myTotalPowerCheckEvent == nullptr && myStationaryEnergyStorage == nullptr) {
         myTotalPowerCheckEvent = new WrappingCommand<MSChargingStation>(this, &MSChargingStation::checkTotalPower);
         MSNet::getInstance()->getEndOfTimestepEvents()->addEvent(myTotalPowerCheckEvent);
     }
@@ -274,7 +274,7 @@ MSChargingStation::rebalanceTotalPower(SUMOTime currentTime) {
             battery->setActualBatteryCapacity(abc - excessWh);
             battery->setEnergyCharged(deliveredWh);
             myTotalCharge -= excessWh;
-            if (myStationaryStorage != nullptr) {
+            if (myStationaryEnergyStorage != nullptr) {
                 myEnergyRequestedStep -= myEfficiency > 0 ? excessWh / myEfficiency : excessWh;
             }
 
@@ -295,13 +295,13 @@ MSChargingStation::rebalanceTotalPower(SUMOTime currentTime) {
 
 
 SUMOTime
-MSChargingStation::updateStationaryStorage(SUMOTime currentTime) {
+MSChargingStation::updateStationaryEnergyStorage(SUMOTime currentTime) {
     // throttle first, so the storage only sees the energy actually delivered
     if (myTotalChargingPower > 0 && (myChargeInTransit || myChargingVehicle)) {
         rebalanceTotalPower(currentTime);
     }
     const double energyReceived = myEnergySourcePV != nullptr ? myEnergySourcePV->energyGenerated(currentTime, DELTA_T) : 0.;
-    myStationaryStorage->stationaryStorageLoop(myEnergyRequestedStep, energyReceived, TS);
+    myStationaryEnergyStorage->stationaryEnergyStorageLoop(myEnergyRequestedStep, energyReceived, TS);
     myEnergyRequestedStep = 0;
     return DELTA_T;
 }
@@ -326,7 +326,7 @@ MSChargingStation::isCharging() const {
 void
 MSChargingStation::addChargeValueForOutput(double WCharged, MSDevice_Battery* battery) {
     // the charger draws the charged energy plus its losses (independent of any output)
-    if (myStationaryStorage != nullptr) {
+    if (myStationaryEnergyStorage != nullptr) {
         myEnergyRequestedStep += myEfficiency > 0 ? WCharged / myEfficiency : WCharged;
     }
     if (!OptionsCont::getOptions().isSet("chargingstations-output")) {

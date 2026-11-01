@@ -11,7 +11,7 @@
 // https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
-/// @file    MSStationaryStorage.cpp
+/// @file    MSStationaryEnergyStorage.cpp
 /// @author
 /// @date    2026-10-30
 ///
@@ -26,14 +26,14 @@
 #include <utils/common/ToString.h>
 #include <utils/common/UtilExceptions.h>
 #include <utils/iodevices/OutputDevice.h>
-#include "MSStationaryStorage.h"
+#include "MSStationaryEnergyStorage.h"
 
 
 // ===========================================================================
 // EnergyFlows
 // ===========================================================================
-MSStationaryStorage::EnergyFlows&
-MSStationaryStorage::EnergyFlows::operator+=(const EnergyFlows& other) {
+MSStationaryEnergyStorage::EnergyFlows&
+MSStationaryEnergyStorage::EnergyFlows::operator+=(const EnergyFlows& other) {
     energyDrawGrid += other.energyDrawGrid;
     energyReceived += other.energyReceived;
     energyDischargedFromStorage += other.energyDischargedFromStorage;
@@ -49,36 +49,36 @@ MSStationaryStorage::EnergyFlows::operator+=(const EnergyFlows& other) {
 // ===========================================================================
 // static method definitions
 // ===========================================================================
-std::unique_ptr<MSStationaryStorage>
-MSStationaryStorage::buildFromParams(const std::string& chargingStationID, const Parameterised& params) {
-    if (!params.hasParameter("ess.maximumStorageCapacity")) {
+std::unique_ptr<MSStationaryEnergyStorage>
+MSStationaryEnergyStorage::buildFromParams(const std::string& chargingStationID, const Parameterised& params) {
+    if (!params.hasParameter("ses.maximumStorageCapacity")) {
         return nullptr;
     }
-    const std::string id = params.getParameter("ess.id", chargingStationID + "_storage");
-    const double maximumStorageCapacity = readDouble(chargingStationID, params, "ess.maximumStorageCapacity", 0);
-    const double stateOfChargeStartUp = readDouble(chargingStationID, params, "ess.stateOfChargeStartUp", 0);
-    const double drawTarget = readDouble(chargingStationID, params, "ess.drawTarget", 0);
-    const double drawPower = readDouble(chargingStationID, params, "ess.drawPower", 0);
+    const std::string id = params.getParameter("ses.id", chargingStationID + "_ses");
+    const double maximumStorageCapacity = readDouble(chargingStationID, params, "ses.maximumStorageCapacity", 0);
+    const double stateOfChargeStartUp = readDouble(chargingStationID, params, "ses.stateOfChargeStartUp", 0);
+    const double drawTarget = readDouble(chargingStationID, params, "ses.drawTarget", 0);
+    const double drawPower = readDouble(chargingStationID, params, "ses.drawPower", 0);
 
     if (maximumStorageCapacity < 0) {
-        throw ProcessError(TLF("Parameter 'ess.maximumStorageCapacity' of chargingStation '%' must not be negative (%).", chargingStationID, toString(maximumStorageCapacity)));
+        throw ProcessError(TLF("Parameter 'ses.maximumStorageCapacity' of chargingStation '%' must not be negative (%).", chargingStationID, toString(maximumStorageCapacity)));
     }
     if (stateOfChargeStartUp < 0 || stateOfChargeStartUp > 1) {
-        throw ProcessError(TLF("Parameter 'ess.stateOfChargeStartUp' of chargingStation '%' must be within [0, 1] (%).", chargingStationID, toString(stateOfChargeStartUp)));
+        throw ProcessError(TLF("Parameter 'ses.stateOfChargeStartUp' of chargingStation '%' must be within [0, 1] (%).", chargingStationID, toString(stateOfChargeStartUp)));
     }
     if (drawTarget < 0 || drawTarget > 1) {
-        throw ProcessError(TLF("Parameter 'ess.drawTarget' of chargingStation '%' must be within [0, 1] (%).", chargingStationID, toString(drawTarget)));
+        throw ProcessError(TLF("Parameter 'ses.drawTarget' of chargingStation '%' must be within [0, 1] (%).", chargingStationID, toString(drawTarget)));
     }
     if (drawPower < 0) {
-        throw ProcessError(TLF("Parameter 'ess.drawPower' of chargingStation '%' must not be negative (%).", chargingStationID, toString(drawPower)));
+        throw ProcessError(TLF("Parameter 'ses.drawPower' of chargingStation '%' must not be negative (%).", chargingStationID, toString(drawPower)));
     }
-    return std::unique_ptr<MSStationaryStorage>(new MSStationaryStorage(id, chargingStationID, maximumStorageCapacity,
+    return std::unique_ptr<MSStationaryEnergyStorage>(new MSStationaryEnergyStorage(id, chargingStationID, maximumStorageCapacity,
             stateOfChargeStartUp, drawTarget, drawPower));
 }
 
 
 double
-MSStationaryStorage::readDouble(const std::string& chargingStationID, const Parameterised& params, const std::string& key, double defaultValue) {
+MSStationaryEnergyStorage::readDouble(const std::string& chargingStationID, const Parameterised& params, const std::string& key, double defaultValue) {
     if (!params.hasParameter(key)) {
         return defaultValue;
     }
@@ -94,7 +94,7 @@ MSStationaryStorage::readDouble(const std::string& chargingStationID, const Para
 
 
 void
-MSStationaryStorage::writeFlows(OutputDevice& out, const EnergyFlows& flows, const std::string& suffix) {
+MSStationaryEnergyStorage::writeFlows(OutputDevice& out, const EnergyFlows& flows, const std::string& suffix) {
     out.writeAttr("energyDrawGrid" + suffix, flows.energyDrawGrid);
     out.writeAttr("energyReceived" + suffix, flows.energyReceived);
     out.writeAttr("energyDischargedFromStorage" + suffix, flows.energyDischargedFromStorage);
@@ -109,7 +109,7 @@ MSStationaryStorage::writeFlows(OutputDevice& out, const EnergyFlows& flows, con
 // ===========================================================================
 // member method definitions
 // ===========================================================================
-MSStationaryStorage::MSStationaryStorage(const std::string& id, const std::string& chargingStationID, double maximumStorageCapacity,
+MSStationaryEnergyStorage::MSStationaryEnergyStorage(const std::string& id, const std::string& chargingStationID, double maximumStorageCapacity,
         double stateOfChargeStartUp, double drawTarget, double drawPower) :
     myID(id),
     myChargingStationID(chargingStationID),
@@ -121,11 +121,11 @@ MSStationaryStorage::MSStationaryStorage(const std::string& id, const std::strin
 }
 
 
-MSStationaryStorage::~MSStationaryStorage() {}
+MSStationaryEnergyStorage::~MSStationaryEnergyStorage() {}
 
 
 void
-MSStationaryStorage::stationaryStorageLoop(double energyRequested, double energyReceived, double stepLength) {
+MSStationaryEnergyStorage::stationaryEnergyStorageLoop(double energyRequested, double energyReceived, double stepLength) {
     myStep = EnergyFlows();
     myStep.energyReceived = energyReceived;
     if (!directEnergyUtilisation(energyRequested, energyReceived)) {
@@ -141,7 +141,7 @@ MSStationaryStorage::stationaryStorageLoop(double energyRequested, double energy
 
 
 bool
-MSStationaryStorage::directEnergyUtilisation(double energyRequested, double energyReceived) {
+MSStationaryEnergyStorage::directEnergyUtilisation(double energyRequested, double energyReceived) {
     if (energyRequested > energyReceived) {
         return false;
     }
@@ -156,7 +156,7 @@ MSStationaryStorage::directEnergyUtilisation(double energyRequested, double ener
 
 
 bool
-MSStationaryStorage::storageSupportedEnergy(double energyRequested, double energyReceived) {
+MSStationaryEnergyStorage::storageSupportedEnergy(double energyRequested, double energyReceived) {
     const double remainingEnergyDemand = energyRequested - energyReceived;
     if (myStorageCapacity < remainingEnergyDemand) {
         return false;
@@ -169,7 +169,7 @@ MSStationaryStorage::storageSupportedEnergy(double energyRequested, double energ
 
 
 void
-MSStationaryStorage::gridSupportedEnergy(double energyRequested, double energyReceived) {
+MSStationaryEnergyStorage::gridSupportedEnergy(double energyRequested, double energyReceived) {
     const double remainingEnergyDemand = energyRequested - energyReceived - myStorageCapacity;
     myStep.receivedEnergyToVehicle = energyReceived;
     myStep.energyDischargedFromStorage = myStorageCapacity;
@@ -179,7 +179,7 @@ MSStationaryStorage::gridSupportedEnergy(double energyRequested, double energyRe
 
 
 void
-MSStationaryStorage::passiveDraw(double stepLength) {
+MSStationaryEnergyStorage::passiveDraw(double stepLength) {
     const double target = myDrawTarget * myMaximumStorageCapacity;
     if (myDrawPower <= 0 || myStorageCapacity >= target) {
         return;
@@ -191,7 +191,7 @@ MSStationaryStorage::passiveDraw(double stepLength) {
 
 
 void
-MSStationaryStorage::writeOutput(OutputDevice& out) {
+MSStationaryEnergyStorage::writeOutput(OutputDevice& out) {
     out.openTag("station");
     out.writeAttr("id", myID);
     out.writeAttr("chargingStationId", myChargingStationID);

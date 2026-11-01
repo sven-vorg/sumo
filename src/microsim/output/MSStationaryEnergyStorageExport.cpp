@@ -11,30 +11,30 @@
 // https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
-/// @file    MSStationaryStorageExport.cpp
+/// @file    MSStationaryEnergyStorageExport.cpp
 /// @author
 /// @date    2026-10-30
 ///
-// Realises dumping the state of stationary storages at charging stations
+// Realises dumping the state of stationary energy storages at charging stations
 /****************************************************************************/
 #include <config.h>
 
 #include <utils/iodevices/OutputDevice.h>
 #include <microsim/MSNet.h>
 #include <microsim/trigger/MSChargingStation.h>
-#include <microsim/trigger/MSStationaryStorage.h>
-#include "MSStationaryStorageExport.h"
+#include <microsim/trigger/MSStationaryEnergyStorage.h>
+#include "MSStationaryEnergyStorageExport.h"
 
 
 // ===========================================================================
 // method definitions
 // ===========================================================================
 void
-MSStationaryStorageExport::write(OutputDevice& of, SUMOTime timestep, int precision) {
+MSStationaryEnergyStorageExport::write(OutputDevice& of, SUMOTime timestep, int precision) {
     of.setPrecision(precision);
-    of.openTag(SUMO_TAG_TIMESTEP).writeAttr(SUMO_ATTR_TIME, time2string(timestep));
+    of.openTag(SUMO_TAG_TIMESTEP).writeTime(SUMO_ATTR_TIME, timestep);
     for (const auto& stop : MSNet::getInstance()->getStoppingPlaces(SUMO_TAG_CHARGING_STATION)) {
-        MSStationaryStorage* const storage = static_cast<MSChargingStation*>(stop.second)->getStationaryStorage();
+        MSStationaryEnergyStorage* const storage = static_cast<MSChargingStation*>(stop.second)->getStationaryEnergyStorage();
         if (storage != nullptr) {
             storage->writeOutput(of);
         }

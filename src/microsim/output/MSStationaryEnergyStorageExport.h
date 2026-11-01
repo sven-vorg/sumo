@@ -11,11 +11,11 @@
 // https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
-/// @file    MSStationaryStorageExport.h
+/// @file    MSStationaryEnergyStorageExport.h
 /// @author
 /// @date    2026-10-30
 ///
-// Realises dumping the state of stationary storages at charging stations
+// Realises dumping the state of stationary energy storages at charging stations
 /****************************************************************************/
 #pragma once
 #include <config.h>
@@ -33,15 +33,15 @@ class OutputDevice;
 // class definitions
 // ===========================================================================
 /**
- * @class MSStationaryStorageExport
- * @brief Realises dumping the state of stationary storages at charging stations
+ * @class MSStationaryEnergyStorageExport
+ * @brief Realises dumping the state of stationary energy storages at charging stations
  *
  *  The class offers a static method, which writes the state of the stationary
  *  storage of every charging station that has one into the given OutputDevice.
  */
-class MSStationaryStorageExport {
+class MSStationaryEnergyStorageExport {
 public:
-    /** @brief Writes the state of all stationary storages for the given time step
+    /** @brief Writes the state of all stationary energy storages for the given time step
      *
      * @param[in] of The output device to use
      * @param[in] timestep The current time step
@@ -52,8 +52,8 @@ public:
 
 private:
     /// @brief Invalidated copy constructor.
-    MSStationaryStorageExport(const MSStationaryStorageExport&) = delete;
+    MSStationaryEnergyStorageExport(const MSStationaryEnergyStorageExport&) = delete;
 
     /// @brief Invalidated assignment operator.
-    MSStationaryStorageExport& operator=(const MSStationaryStorageExport&) = delete;
+    MSStationaryEnergyStorageExport& operator=(const MSStationaryEnergyStorageExport&) = delete;
 };

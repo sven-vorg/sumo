@@ -11,7 +11,7 @@
 // https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
-/// @file    MSStationaryStorage.h
+/// @file    MSStationaryEnergyStorage.h
 /// @author
 /// @date    2026-10-30
 ///
@@ -35,7 +35,7 @@ class Parameterised;
 // class definitions
 // ===========================================================================
 /**
- * @class MSStationaryStorage
+ * @class MSStationaryEnergyStorage
  * @brief Battery built into a charging station
  *
  * The storage does not generate energy itself. Once per simulation step it is handed
@@ -49,13 +49,13 @@ class Parameterised;
  * All energies are in Wh, all powers in W.
  *
  * Configured via the following parameters of the charging station:
- *  - ess.maximumStorageCapacity  capacity [Wh] (mandatory, enables the storage)
- *  - ess.stateOfChargeStartUp    initial state of charge as fraction of capacity [0..1] (default 0)
- *  - ess.drawTarget              passive draw until this fraction of capacity [0..1] (default 0)
- *  - ess.drawPower               passive draw power [W] (default 0)
- *  - ess.id                      id of the storage (default <chargingStationID>_storage)
+ *  - ses.maximumStorageCapacity  capacity [Wh] (mandatory, enables the storage)
+ *  - ses.stateOfChargeStartUp    initial state of charge as fraction of capacity [0..1] (default 0)
+ *  - ses.drawTarget              passive draw until this fraction of capacity [0..1] (default 0)
+ *  - ses.drawPower               passive draw power [W] (default 0)
+ *  - ses.id                      id of the storage (default <chargingStationID>_ses)
  */
-class MSStationaryStorage {
+class MSStationaryEnergyStorage {
 public:
     /// @brief energy flows [Wh], used for the current step and for the accumulated totals
     struct EnergyFlows {
@@ -82,24 +82,24 @@ public:
     /** @brief Builds a storage from the parameters of a charging station
      * @param[in] chargingStationID The id of the charging station
      * @param[in] params The parameters of the charging station
-     * @return the storage or nullptr if ess.maximumStorageCapacity is not given
+     * @return the storage or nullptr if ses.maximumStorageCapacity is not given
      * @exception ProcessError if a parameter is invalid
      */
-    static std::unique_ptr<MSStationaryStorage> buildFromParams(const std::string& chargingStationID, const Parameterised& params);
+    static std::unique_ptr<MSStationaryEnergyStorage> buildFromParams(const std::string& chargingStationID, const Parameterised& params);
 
     /// @brief constructor
-    MSStationaryStorage(const std::string& id, const std::string& chargingStationID, double maximumStorageCapacity,
-                        double stateOfChargeStartUp, double drawTarget, double drawPower);
+    MSStationaryEnergyStorage(const std::string& id, const std::string& chargingStationID, double maximumStorageCapacity,
+                              double stateOfChargeStartUp, double drawTarget, double drawPower);
 
     /// @brief destructor
-    ~MSStationaryStorage();
+    ~MSStationaryEnergyStorage();
 
     /** @brief Advances the storage by one simulation step
      * @param[in] energyRequested The energy requested by vehicles during this step [Wh]
      * @param[in] energyReceived The energy received from the energy source during this step [Wh]
      * @param[in] stepLength The length of the step [s]
      */
-    void stationaryStorageLoop(double energyRequested, double energyReceived, double stepLength);
+    void stationaryEnergyStorageLoop(double energyRequested, double energyReceived, double stepLength);
 
     /** @brief Writes the current state as a <station> element
      *
@@ -190,8 +190,8 @@ private:
 
 private:
     /// @brief Invalidated copy constructor.
-    MSStationaryStorage(const MSStationaryStorage&) = delete;
+    MSStationaryEnergyStorage(const MSStationaryEnergyStorage&) = delete;
 
     /// @brief Invalidated assignment operator.
-    MSStationaryStorage& operator=(const MSStationaryStorage&) = delete;
+    MSStationaryEnergyStorage& operator=(const MSStationaryEnergyStorage&) = delete;
 };
