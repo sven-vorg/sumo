@@ -112,7 +112,7 @@ public:
     MSStationaryEnergyStorage* getStationaryEnergyStorage() const;
 
     /// @brief Get the PV energy source (nullptr if there is none)
-    const MSEnergySourcePV* getEnergySourcePV() const;
+    MSEnergySourcePV* getEnergySourcePV() const;
 
     /// @brief Get charging station's charging power
     double getChargingPower(bool usingFuel) const;

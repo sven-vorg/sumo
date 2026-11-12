@@ -104,7 +104,7 @@ MSChargingStation::getStationaryEnergyStorage() const {
 }
 
 
-const MSEnergySourcePV*
+MSEnergySourcePV*
 MSChargingStation::getEnergySourcePV() const {
     return myEnergySourcePV.get();
 }

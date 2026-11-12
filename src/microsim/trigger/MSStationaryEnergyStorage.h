@@ -128,6 +128,11 @@ public:
         return myStorageCapacity;
     }
 
+    /// @brief current state of charge as fraction of capacity [0..1]
+    double getStateOfCharge() const {
+        return myMaximumStorageCapacity > 0 ? myStorageCapacity / myMaximumStorageCapacity : 0.;
+    }
+
     const EnergyFlows& getStepFlows() const {
         return myStep;
     }
@@ -139,6 +144,52 @@ public:
 
     const EnergyFlows& getTotalFlows() const {
         return myTotal;
+    }
+    /// @}
+
+    /// @name Single flows of the last step [Wh], e.g. for FunctionBinding in the GUI
+    /// @{
+    double getStepEnergyDrawGrid() const {
+        return myStep.energyDrawGrid;
+    }
+
+    double getStepEnergyReceived() const {
+        return myStep.energyReceived;
+    }
+
+    double getStepEnergyDischargedFromStorage() const {
+        return myStep.energyDischargedFromStorage;
+    }
+
+    double getStepReceivedEnergyToStorage() const {
+        return myStep.receivedEnergyToStorage;
+    }
+
+    double getStepDrawnEnergyToStorage() const {
+        return myStep.drawnEnergyToStorage;
+    }
+
+    double getStepCurtailedEnergy() const {
+        return myStep.curtailedEnergy;
+    }
+    /// @}
+
+    /// @name Single accumulated flows since the simulation start [Wh]
+    /// @{
+    double getTotalEnergyDrawGrid() const {
+        return myTotal.energyDrawGrid;
+    }
+
+    double getTotalEnergyReceived() const {
+        return myTotal.energyReceived;
+    }
+
+    double getTotalEnergyDischargedFromStorage() const {
+        return myTotal.energyDischargedFromStorage;
+    }
+
+    double getTotalCurtailedEnergy() const {
+        return myTotal.curtailedEnergy;
     }
     /// @}
 

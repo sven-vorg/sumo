@@ -32,6 +32,8 @@
 #include <microsim/MSNet.h>
 #include <microsim/MSParkingArea.h>
 #include <microsim/logging/FunctionBinding.h>
+#include <microsim/trigger/MSEnergySourcePV.h>
+#include <microsim/trigger/MSStationaryEnergyStorage.h>
 #include <utils/common/MsgHandler.h>
 #include <utils/common/ToString.h>
 #include <utils/geom/Boundary.h>
@@ -92,6 +94,28 @@ GUIChargingStation::getParameterWindow(GUIMainWindow& app, GUISUMOAbstractView&)
     ret->mkItem(TL("charge delay [s]"), false, STEPS2TIME(myChargeDelay));
     ret->mkItem(TL("charge type"), false, chargeTypeToString(myChargeType));
     ret->mkItem(TL("waiting time [s]"), false, STEPS2TIME(myWaitingTime));
+    // stationary energy storage, step values refer to the last completed step
+    MSStationaryEnergyStorage* const ses = getStationaryEnergyStorage();
+    if (ses != nullptr) {
+        ret->mkItem(TL("ses id"), false, ses->getID());
+        ret->mkItem(TL("ses capacity [Wh]"), false, ses->getMaximumStorageCapacity());
+        ret->mkItem(TL("ses state of charge [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStorageCapacity));
+        ret->mkItem(TL("ses state of charge [%]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStateOfCharge, 100.));
+        ret->mkItem(TL("ses received (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepEnergyReceived));
+        ret->mkItem(TL("ses received to storage (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepReceivedEnergyToStorage));
+        ret->mkItem(TL("ses discharged from storage (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepEnergyDischargedFromStorage));
+        ret->mkItem(TL("ses grid draw (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepEnergyDrawGrid));
+        ret->mkItem(TL("ses grid draw to storage (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepDrawnEnergyToStorage));
+        ret->mkItem(TL("ses curtailed (step) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getStepCurtailedEnergy));
+        ret->mkItem(TL("ses received (total) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getTotalEnergyReceived));
+        ret->mkItem(TL("ses discharged from storage (total) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getTotalEnergyDischargedFromStorage));
+        ret->mkItem(TL("ses grid draw (total) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getTotalEnergyDrawGrid));
+        ret->mkItem(TL("ses curtailed (total) [Wh]"), true, new FunctionBinding<MSStationaryEnergyStorage, double>(ses, &MSStationaryEnergyStorage::getTotalCurtailedEnergy));
+    }
+    MSEnergySourcePV* const pv = getEnergySourcePV();
+    if (pv != nullptr) {
+        ret->mkItem(TL("pv generated (step) [Wh]"), true, new FunctionBinding<MSEnergySourcePV, double>(pv, &MSEnergySourcePV::getLastEnergyGenerated));
+    }
     // close building
     ret->closeBuilding();
     return ret;
