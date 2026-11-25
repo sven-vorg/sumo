@@ -27,6 +27,10 @@
 #include <microsim/MSRoute.h>
 #include <microsim/MSEdge.h>
 #include <microsim/MSLane.h>
+#include <microsim/MSGlobals.h>
+#ifdef HAVE_FOX
+#include <utils/common/ScopedLocker.h>
+#endif
 #include "MSRailSignal.h"
 #include "MSRailSignalConstraint.h"
 #include "MSDriveWay.h"
@@ -198,7 +202,7 @@ MSRailSignalControl::haveDeadlock(const SUMOVehicle* veh) const {
                     int start = item.foe->getRoutePosition();
                     if (!MSGlobals::gUseMesoSim) {
                         const std::vector<MSLane*>& further = dynamic_cast<const MSVehicle*>(item.foe)->getFurtherLanes();
-                        start = MAX2(0.0, start - (MSGlobals::gUsingInternalLanes && MSNet::getInstance()->hasInternalLinks() ? ceil(further.size() / 2) : further.size()));
+                        start = MAX2(0, start - (int)(MSGlobals::gUsingInternalLanes && MSNet::getInstance()->hasInternalLinks() ? further.size() / 2 : further.size()));
                     }
                     const MSRoute& route = item.foe->getRoute();
                     ConstMSEdgeVector future(route.begin() + start, route.end());
@@ -385,6 +389,9 @@ void
 MSRailSignalControl::notifyApproach(const MSLink* link) {
     const MSRailSignal* rs = dynamic_cast<const MSRailSignal*>(link->getTLLogic());
     assert(rs != nullptr);
+#ifdef HAVE_FOX
+    ScopedLocker<> lock(myActiveSignalsMutex, MSGlobals::gNumSimThreads > 1);
+#endif
     myActiveSignals.insert(const_cast<MSRailSignal*>(rs));
 }
 

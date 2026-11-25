@@ -176,9 +176,9 @@ private:
 
 
     /// @brief leader cars in the segments sorted by exit time
-    typedef std::priority_queue<LeaderEvent> LeaderEventQeue;
-    LeaderEventQeue myLeaderCars;
-    LeaderEventQeue myInvalidatedLeaderCars;
+    typedef std::priority_queue<LeaderEvent> LeaderEventQueue;
+    LeaderEventQueue myLeaderCars;
+    LeaderEventQueue myInvalidatedLeaderCars;
 
     /// @brief mapping from internal edge ids to their initial segments
     std::vector<MESegment*> myEdges2FirstSegments;
@@ -188,6 +188,8 @@ private:
 
     /// @brief the interval at which to recheck at blocked junctions (<=0 means asap)
     const SUMOTime myLinkRecheckInterval;
+
+    bool myInterpolateMesoPos;
 
 private:
     /// @brief Invalidated copy constructor.

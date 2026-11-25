@@ -138,7 +138,10 @@ MESegment::MESegment(const std::string& id,
         usableLanes = 1;
     }
     if (multiQueue) {
-        if (next == nullptr) {
+        // vehicles choose their queue by their next edge on the last segment and on all segments ending within the lookahead distance
+        const double distToEnd = parent.getLength() - (idx + 1) * length;
+        if (next == nullptr || distToEnd < edgeType.lookahead) {
+            SearchedMap searched;
             for (const MSEdge* const edge : parent.getSuccessors()) {
                 if (edge->isTazConnector()) {
                     continue;
@@ -149,6 +152,18 @@ MESegment::MESegment(const std::string& id,
                 for (MSLane* const l : *allowed) {
                     std::vector<MSLane*>::const_iterator it = std::find(lanes.begin(), lanes.end(), l);
                     myFollowerMap[edge] |= (1 << distance(lanes.begin(), it));
+                }
+                if (edgeType.lookahead > 0) {
+                    // follow the lanes of this edge into later edges whose turns are within the lookahead distance
+                    std::vector<int> reach(lanes.size(), 0);
+                    for (int i = 0; i < (int)lanes.size(); i++) {
+                        for (const MSLink* const link : lanes[i]->getLinkCont()) {
+                            if (&link->getLane()->getEdge() == edge) {
+                                reach[i] |= 1 << link->getLane()->getIndex();
+                            }
+                        }
+                    }
+                    addDownstreamFollowers(*edge, reach, 0., edgeType.lookahead - MAX2(0., distToEnd), 1, searched);
                 }
             }
         }
@@ -165,6 +180,56 @@ MESegment::MESegment(const std::string& id,
 
     initSegment(edgeType, parent, length * usableLanes);
 }
+
+void
+MESegment::addDownstreamFollowers(const MSEdge& edge, const std::vector<int>& reach, const double dist, const double lookahead, const int depth, SearchedMap& searched) {
+    if (dist + edge.getLength() >= lookahead) {
+        return;
+    }
+    // a search with the same reach that started no further away and at least as deep has added everything this one would
+    std::vector<std::pair<double, int> >& previous = searched[std::make_pair(&edge, reach)];
+    for (const std::pair<double, int>& p : previous) {
+        if (p.first <= dist && p.second >= depth) {
+            return;
+        }
+    }
+    previous.push_back(std::make_pair(dist, depth));
+    const std::vector<MSLane*>& lanes = edge.getLanes();
+    int usable = 0;
+    for (int i = 0; i < (int)reach.size(); i++) {
+        if (reach[i] != 0) {
+            usable |= 1 << i;
+        }
+    }
+    for (const MSEdge* const succ : edge.getSuccessors()) {
+        if (succ->isTazConnector()) {
+            continue;
+        }
+        // the queues of this segment from which succ can be reached without changing lanes
+        int queues = 0;
+        std::vector<int> succReach(reach.size(), 0);
+        for (int i = 0; i < (int)reach.size(); i++) {
+            for (int j = 0; j < (int)lanes.size(); j++) {
+                if ((reach[i] & (1 << j)) != 0) {
+                    for (const MSLink* const link : lanes[j]->getLinkCont()) {
+                        if (&link->getLane()->getEdge() == succ) {
+                            queues |= 1 << i;
+                            succReach[i] |= 1 << link->getLane()->getIndex();
+                        }
+                    }
+                }
+            }
+        }
+        if (queues != 0) {
+            if (queues != usable) {
+                myFollowerMap[succ] |= queues;
+                myLookahead = MAX2(myLookahead, depth + 1);
+            }
+            addDownstreamFollowers(*succ, succReach, dist + edge.getLength(), lookahead, depth + 1, searched);
+        }
+    }
+}
+
 
 void
 MESegment::initSegment(const MesoEdgeType& edgeType, const MSEdge& parent, const double capacity) {
@@ -203,6 +268,8 @@ MESegment::initSegment(const MesoEdgeType& edgeType, const MSEdge& parent, const
                            parent.hasMinorLink());
     myMinorPenalty = edgeType.minorPenalty;
     myOvertaking = edgeType.overtaking && myCapacity > myLength;
+    // keyed by the edge id because adding or removing edges elsewhere renumbers the numerical ids
+    myOvertakeKey = (long long int)((uint64_t)RandHelper::murmur3_32(parent.getID(), myIndex) << 32);
 
     //std::cout << getID() << " myMinorPenalty=" << myMinorPenalty << " myTLSPenalty=" << myTLSPenalty << " myJunctionControl=" << myJunctionControl << " myOvertaking=" << myOvertaking << "\n";
 
@@ -325,7 +392,7 @@ SUMOTime
 MESegment::hasSpaceFor(const MEVehicle* const veh, const SUMOTime entryTime, int& qIdx, const bool init) const {
     SUMOTime earliestEntry = SUMOTime_MAX;
     qIdx = 0;
-    if (myNumVehicles == 0 && myQueues.size() == 1) {
+    if (myNumVehicles == 0 && myQueues.size() == 1 && (init || !hasTravelingGaps(0, entryTime))) {
         // we have always space for at least one vehicle
         if (myQueues.front().allows(veh->getVClass())) {
             return entryTime;
@@ -335,12 +402,36 @@ MESegment::hasSpaceFor(const MEVehicle* const veh, const SUMOTime entryTime, int
     }
     const SUMOVehicleClass svc = veh->getVClass();
     int minSize = std::numeric_limits<int>::max();
-    const MSEdge* const succ = myNextSegment == nullptr ? veh->succEdge(veh->getEdge() == &myEdge ? 1 : 2) : nullptr;
+    // the queues leading to the next edges of the vehicle's route
+    int usable = -1;
+    if (!myFollowerMap.empty()) {
+        // the lane chain to a later route edge may run through lanes the vehicle may not use
+        int permitted = -1;
+        if (myLookahead > 1) {
+            permitted = 0;
+            for (int i = 0; i < (int)myQueues.size(); i++) {
+                if (myQueues[i].allows(svc)) {
+                    permitted |= 1 << i;
+                }
+            }
+        }
+        const int offset = veh->getEdge() == &myEdge ? 1 : 2;
+        for (int k = 0; k < myLookahead; k++) {
+            const MSEdge* const succ = veh->succEdge(offset + k);
+            if (succ == nullptr) {
+                break;
+            }
+            const auto it = myFollowerMap.find(succ);
+            if (it != myFollowerMap.end() && (k == 0 || (usable & it->second & permitted) != 0)) {
+                usable &= it->second;
+            }
+        }
+    }
     for (int i = 0; i < (int)myQueues.size(); i++) {
         const Queue& q = myQueues[i];
         const double newOccupancy = q.size() == 0 ? 0. : q.getOccupancy() + veh->getVehicleType().getLengthWithGap();
         if (newOccupancy <= myQueueCapacity) { // we must ensure that occupancy remains below capacity
-            if (succ == nullptr || myFollowerMap.count(succ) == 0 || ((myFollowerMap.find(succ)->second & (1 << i)) != 0)) {
+            if ((usable & (1 << i)) != 0) {
                 if (q.allows(svc) && q.size() < minSize) {
                     if (init) {
                         // regular insertions and initial insertions must respect different constraints:
@@ -513,7 +604,7 @@ MESegment::getLink(const MEVehicle* veh, bool penalty) const {
 }
 
 
-bool
+int
 MESegment::isOpen(const MEVehicle* veh) const {
 #ifdef DEBUG_OPENED
     if (DEBUG_COND || DEBUG_COND2(veh)) {
@@ -542,16 +633,25 @@ MESegment::isOpen(const MEVehicle* veh) const {
 #endif
     if (myTLSPenalty) {
         // XXX should limited control take precedence over tls penalty?
-        return true;
+        return PROCEED_YES;
     }
     const MSLink* link = getLink(veh);
-    return (link == nullptr
+    const bool open = (link == nullptr
             || link->havePriority()
             || limitedControlOverride(link)
             || link->opened(veh->getEventTime(), veh->getSpeed(), veh->estimateLeaveSpeed(link),
-                            veh->getVehicleType().getLengthWithGap(), veh->getImpatience(),
-                            veh->getVehicleType().getCarFollowModel().getMaxDecel(), veh->getWaitingTime(),
-                            0, nullptr, false, veh));
+                veh->getVehicleType().getLengthWithGap(), veh->getImpatience(),
+                veh->getVehicleType().getCarFollowModel().getMaxDecel(), veh->getWaitingTime(),
+                0, nullptr, false, veh));
+    if (open) {
+        return PROCEED_YES;
+    } else {
+        int status = PROCEED_NO;
+        if (link != nullptr && link->isTLSControlled()) {
+            status |= PROCEED_NO_TLS;
+        }
+        return status;
+    }
 }
 
 
@@ -644,8 +744,10 @@ MESegment::getTauJJ(double nextQueueSize, double nextQueueCapacity, double nextJ
 
 
 bool
-MESegment::overtake() {
-    return myOvertaking && RandHelper::rand() > (getBruttoOccupancy() / myCapacity);
+MESegment::overtake(const MEVehicle* veh) const {
+    // the global RNG would let the number of draws elsewhere decide this vehicle's outcome
+    const long long int key = veh->getRandomSeed() ^ myOvertakeKey;
+    return myOvertaking && RandHelper::randHash(key) > (getBruttoOccupancy() / myCapacity);
 }
 
 
@@ -654,6 +756,16 @@ MESegment::addReminders(MEVehicle* veh) const {
     if (veh->getQueIndex() != PARKING_QUEUE) {
         myQueues[veh->getQueIndex()].addReminders(veh);
     }
+}
+
+
+double
+MESegment::getVehicleMaxSpeed(const MEVehicle& veh, int queueIndex) const {
+    const auto& routeLanes = veh.getEdge()->getLanes();
+    // The route edge is still the incoming edge until the vehicle leaves the junction.
+    const MSLane* const lane = queueIndex < (int)routeLanes.size()
+            ? routeLanes[queueIndex] : myEdge.getLanes()[queueIndex];
+    return lane->getVehicleMaxSpeed(&veh);
 }
 
 
@@ -680,7 +792,7 @@ MESegment::receive(MEVehicle* veh, const int qIdx, SUMOTime time, const bool isD
     assert(veh->getEdge() == &getEdge() || getEdge().isInternal());
     // route continues
     Queue& q = myQueues[qIdx];
-    const double maxSpeedOnEdge = veh->getEdge()->getLanes()[qIdx]->getVehicleMaxSpeed(veh);
+    const double maxSpeedOnEdge = getVehicleMaxSpeed(*veh, qIdx);
     const double uspeed = MAX2(maxSpeedOnEdge, MESO_MIN_SPEED);
     std::vector<MEVehicle*>& cars = q.getModifiableVehicles();
     MEVehicle* newLeader = nullptr; // first vehicle in the current queue
@@ -701,8 +813,13 @@ MESegment::receive(MEVehicle* veh, const int qIdx, SUMOTime time, const bool isD
             newLeader = veh;
         } else {
             SUMOTime leaderOut = cars[0]->getEventTime();
-            if (!isDepart && leaderOut > tleave && overtake()) {
+            if (!isDepart && leaderOut > tleave && overtake(veh)) {
                 if (cars.size() == 1) {
+                    // the overtaken car is no longer the leader and must not block foes
+                    MSLink* const link = getLink(cars[0]);
+                    if (link != nullptr) {
+                        link->removeApproaching(cars[0]);
+                    }
                     MSGlobals::gMesoNet->removeLeaderCar(cars[0]);
                     newLeader = veh;
                 }

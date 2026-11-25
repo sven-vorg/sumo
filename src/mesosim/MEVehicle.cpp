@@ -151,7 +151,7 @@ MEVehicle::getAverageSpeed() const {
         return 0;
     } else {
         return MIN2(s->getLength() / STEPS2TIME(myEventTime - myLastEntryTime),
-                    getEdge()->getLanes()[myQueIndex]->getVehicleMaxSpeed(this));
+                    s->getVehicleMaxSpeed(*this, myQueIndex));
     }
 }
 
@@ -465,13 +465,13 @@ MEVehicle::endTriggeredStop() {
 }
 
 
-bool
+int
 MEVehicle::mayProceed() {
     if (mySegment == nullptr) {
-        return true;
+        return MESegment::PROCEED_YES;
     }
     if (!endTriggeredStop()) {
-        return false;
+        return MESegment::PROCEED_NO | MESegment::PROCEED_NO_STOP;
     }
     return mySegment->isOpen(this);
 }

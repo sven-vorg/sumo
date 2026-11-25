@@ -11,12 +11,25 @@ on:
       - '**'
     tags:
       - '*'
-  pull_request:    # run on pull requests
-    paths-ignore:  # but ignore everything in the docs subfolder
-      - 'docs/**'
+  pull_request:    # run on pull requests, but only if something relevant for the wheels changed
+    paths:
+      - 'CMakeLists.txt'
+      - 'build_config/**'
+      - 'pysrc/**'
+      - 'src/libsumo/**'
+      - 'src/libtraci/**'
+      - 'tools/traci/**'
+      - 'tools/sumolib/**'
+      - '.github/workflows/*wheels.yml'
+      - '.github/workflows/generate-matrix.yml'
   workflow_dispatch:
   schedule:
     - cron:  '5 1 * * *'
+
+concurrency:
+  # a push to a branch with a pull request is cancelled by the pull request run
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || (github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name) || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   call-cibuildwheel:
@@ -30,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ['3.10', 3.11, 3.12, 3.13, 3.14]
+        python_version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10", "3.12", "3.15"]') || fromJSON('["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]') }}
 
     steps:
     - name: Downloading Wheels artifact

@@ -141,9 +141,8 @@ MSActuatedTrafficLightLogic::init(NLDetectorBuilder& nb) {
     MSTrafficLightLogic::init(nb);
     initAttributeOverride();
     initSwitchingRules();
-    for (int i = 0; i < (int)myPhases.size(); i++) {
-        initTargets(i);
-    }
+    // myTargets is computed lazily in decideNextPhase(): it is only needed for phases with multiple 'next' entries that
+    // use the default switching algorithm
     if (myLanes.size() == 0) {
         // must be an older network
         WRITE_WARNINGF(TL("Traffic light '%' does not control any links"), getID());
@@ -651,13 +650,15 @@ MSActuatedTrafficLightLogic::initTargets(int step) {
     // next -> target -> transitionTime starting from step
     std::map<int, std::map<int, SUMOTime> > reached;
     const std::vector<int>& next = myPhases[step]->nextPhases;
+    // also marks step as computed if no target is found
+    std::map<int, std::vector<int> >& targets = myTargets[step];
     for (int n : next) {
         findTargets(step, n, 0, reached[n]);
     }
     for (int target = 0; target < (int)myPhases.size(); target++) {
         int bestNext = next[0];
         SUMOTime bestTime = SUMOTime_MAX;
-        for (auto item : reached) {
+        for (const auto& item : reached) {
             auto it = item.second.find(target);
             if (it != item.second.end()) {
                 SUMOTime transitionTime = it->second;
@@ -668,7 +669,7 @@ MSActuatedTrafficLightLogic::initTargets(int step) {
             }
         }
         if (bestTime != SUMOTime_MAX) {
-            myTargets[step][bestNext].push_back(target);
+            targets[bestNext].push_back(target);
             //std::cout << " myTargets step=" << step << " bestNext=" << bestNext << " target=" << target << "\n";
         }
     }
@@ -800,11 +801,15 @@ MSActuatedTrafficLightLogic::changeStepAndDuration(MSTLLogicControl& tlcontrol,
 
 
 void
-MSActuatedTrafficLightLogic::loadState(MSTLLogicControl& tlcontrol, SUMOTime t, int step, SUMOTime spentDuration, SUMOTime nextSwitch, SUMOTime /*timeInCycle*/, bool active) {
+MSActuatedTrafficLightLogic::loadState(MSTLLogicControl& tlcontrol, SUMOTime t, int step, SUMOTime spentDuration, SUMOTime nextSwitch, SUMOTime timeInCycle, bool active) {
     myAmActive = active;
     const SUMOTime lastSwitch = t - spentDuration;
     myStep = step;
     myPhases[myStep]->myLastSwitch = lastSwitch;
+    if (!myCoordinated && myStep != 0) {
+        // the time in cycle counts from the last start of phase 0
+        myPhases[0]->myLastSwitch = t - timeInCycle;
+    }
     mySwitchCommand->deschedule(this);
     mySwitchCommand = new SwitchCommand(tlcontrol, this, nextSwitch);
     MSNet::getInstance()->getBeginOfTimestepEvents()->addEvent(mySwitchCommand, nextSwitch);
@@ -1007,6 +1012,9 @@ MSActuatedTrafficLightLogic::decideNextPhase() {
             result = myStep;
             maxPrio = currentPrio;
         }
+    }
+    if (myTargets.count(myStep) == 0) {
+        initTargets(myStep);
     }
     for (int step : cands) {
         int prio = 0;
@@ -1588,33 +1596,5 @@ MSActuatedTrafficLightLogic::setParameter(const std::string& key, const std::str
     }
 }
 
-
-void
-MSActuatedTrafficLightLogic::saveState(OutputDevice& out) const {
-    out.openTag(SUMO_TAG_TLLOGIC);
-    MSSimpleTrafficLightLogic::saveStateAttrs(out);
-
-    std::vector<double> state;
-    for (const InductLoopInfo& loopInfo : myInductLoops) {
-        MSInductLoop* loop = loopInfo.loop;
-        state.push_back(loop->getTimeSinceLastDetection());
-    }
-    out.writeAttr(SUMO_ATTR_STATE, state);
-    out.closeTag();
-}
-
-
-void
-MSActuatedTrafficLightLogic::loadExtraState(const std::string& state) {
-    std::vector<std::string> timeGaps = StringTokenizer(state).getVector();
-    int i = 0;
-    for (const InductLoopInfo& loopInfo : myInductLoops) {
-        MSInductLoop* loop = loopInfo.loop;
-        if (i < (int)timeGaps.size()) {
-            loop->loadTimeSinceLastDetection(StringUtils::toDouble(timeGaps[i]));
-        }
-        i++;
-    }
-}
 
 /****************************************************************************/

@@ -189,6 +189,7 @@ MSStateHandler::saveState(const std::string& file, SUMOTime step, bool usePrefix
         }
     }
     MSNet::getInstance()->getTLSControl().saveState(out);
+    MSNet::getInstance()->getDetectorControl().saveState(out);
     MSRoutingEngine::saveState(out);
     out.close();
     gPrecision = defaultPrecision;
@@ -284,6 +285,12 @@ MSStateHandler::myStartElement(int element, const SUMOSAXAttributes& attrs) {
         case SUMO_TAG_EDGE: {
 #ifdef HAVE_FOX
             MSRoutingEngine::loadState(attrs);
+#endif
+            break;
+        }
+        case SUMO_TAG_CCH_METRIC: {
+#ifdef HAVE_FOX
+            MSRoutingEngine::loadCCHMetric(attrs);
 #endif
             break;
         }
@@ -489,8 +496,16 @@ MSStateHandler::myStartElement(int element, const SUMOSAXAttributes& attrs) {
             }
             // might not be set if the phase happens to match and there are multiple programs
             tl->loadState(tlc, myTime, phase, spentDuration, nextSwitch, timeInCycle, active);
-            if (attrs.hasAttribute(SUMO_ATTR_STATE)) {
-                tl->loadExtraState(attrs.get<std::string>(SUMO_ATTR_STATE, tlID.c_str(), ok));
+            break;
+        }
+        case SUMO_TAG_WAUT_SWITCH:
+            MSNet::getInstance()->getTLSControl().loadWAUTSwitch(attrs.getString(SUMO_ATTR_WAUT_ID), attrs.getString(SUMO_ATTR_JUNCTION_ID), attrs.getString(SUMO_ATTR_TO));
+            break;
+        case SUMO_TAG_INDUCTION_LOOP: {
+            MSDetectorFileOutput* const det = MSNet::getInstance()->getDetectorControl().getTypedDetectors(SUMO_TAG_INDUCTION_LOOP).get(attrs.getString(SUMO_ATTR_ID));
+            // the detector may belong to an output which is not loaded
+            if (det != nullptr) {
+                det->loadState(attrs, myOffset);
             }
             break;
         }
@@ -639,6 +654,13 @@ MSStateHandler::closeVehicle() {
             auto it = remDict.find(attrID);
             if (it != remDict.end()) {
                 it->second->loadReminderState(v->getNumericalID(), time, pos);
+            } else {
+                // reminders of vehicle devices (e.g. tripinfo in meso)
+                for (MSVehicleDevice* const dev : v->getDevices()) {
+                    if (dev->getDescription() == attrID) {
+                        dev->loadReminderState(v->getNumericalID(), time, pos);
+                    }
+                }
             }
             delete myReminderAttrs.back();
             myReminderAttrs.pop_back();

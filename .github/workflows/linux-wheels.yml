@@ -11,13 +11,27 @@ on:
       - '**'
     tags:
       - '*'
-  pull_request:    # run on pull requests
-    paths-ignore:  # but ignore everything in the docs subfolder
-      - 'docs/**'
+  pull_request:    # run on pull requests, but only if something relevant for the wheels changed
+    paths:
+      - 'CMakeLists.txt'
+      - 'build_config/**'
+      - 'pysrc/**'
+      - 'src/libsumo/**'
+      - 'src/libtraci/**'
+      - 'tools/traci/**'
+      - 'tools/sumolib/**'
+      - '.github/workflows/*wheels.yml'
+      - '.github/workflows/generate-matrix.yml'
   workflow_dispatch:
+
+concurrency:
+  # a push to a branch with a pull request is cancelled by the pull request run
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || (github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name) || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   call-cibuildwheel:
     uses: ./.github/workflows/cibuildwheel.yml
     with:
-      os: "ubuntu-latest,ubuntu-24.04-arm"
+      # ARM wheels are built and tested on pushes and manual runs.
+      os: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'ubuntu-latest,ubuntu-24.04-arm' }}

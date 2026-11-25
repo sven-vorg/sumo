@@ -80,11 +80,23 @@ protected:
     /// @brief check jam-avoidance constraints during insertion
     bool hasSpaceForInsertion(const Queue& q, int qIdx, double newOccupancy, SUMOTime entryTime) const override;
 
+    /// @brief whether space vacated by vehicles that left the given queue has not yet reached the upstream end
+    bool hasTravelingGaps(int qIdx, SUMOTime time) const override;
+
 private:
+    /// @brief discard gaps that reached the upstream end until the given time and return the number of remaining gaps
+    int numTravelingGaps(int qIdx, SUMOTime time) const;
+
+    /// @brief the length of a segment filled with jammed (default) vehicles
+    const double myJamLength;
+
     /// @brief upstream arrival times of traveling gaps between cars (for each queue)
     // @note: could be slightly faster as a double-index ring-buffer
     typedef std::vector<SUMOTime> GapTimes;
     std::vector<GapTimes> myGapTimes;
+
+    /// @brief upstream arrival time of the latest gap left by a queued vehicle (for each queue, -1 if there is none)
+    std::vector<SUMOTime> myJamGapTimes;
 
 private:
     /// @brief Invalidated copy constructor.

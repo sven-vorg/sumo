@@ -67,6 +67,20 @@ public:
         SUMOTime minorPenalty;
         bool overtaking;
         double edgeLength;
+        double lookahead;
+    };
+
+    enum Proceed_Status {
+        /// @brief mayProceed was not called
+        PROCEED_UNKNOWN = 0,
+        /// @brief the vehicle may proceed to the next segment
+        PROCEED_YES = 1,
+        /// @brief the vehicle must stay on the current segment
+        PROCEED_NO = 2,
+        /// @brief vehicle want's to change to right lane
+        PROCEED_NO_TLS = 4,
+        /// @brief vehicle want's to change to right lane
+        PROCEED_NO_STOP = 8,
     };
 
 
@@ -308,6 +322,9 @@ public:
      */
     double getMeanSpeed(bool useCache) const;
 
+    /// @brief Maximum vehicle speed for the given queue, accounting for internal junction segments.
+    double getVehicleMaxSpeed(const MEVehicle& veh, int queueIndex) const;
+
     /// @brief reset myLastMeanSpeedUpdate
     void resetCachedSpeeds();
 
@@ -344,9 +361,9 @@ public:
      * In case of disabled junction control it returns always true.
      *
      * @param[in] veh The vehicle in question
-     * @return Whether it may pass to the next segment
+     * @return bitsset from Proceed_Status indicating whether veh may pass to the next segment
      */
-    bool isOpen(const MEVehicle* veh) const;
+    int isOpen(const MEVehicle* veh) const;
 
     /** @brief Removes the vehicle from the segment, adapting its parameters
      *
@@ -401,6 +418,16 @@ public:
     /// @brief get the last headway time in seconds
     inline double getLastHeadwaySeconds() const {
         return STEPS2TIME(myLastHeadway);
+    }
+
+    /// @brief get the last headway time
+    inline SUMOTime getLastHeadway() const {
+        return myLastHeadway;
+    }
+
+    /// @brief restores the last headway time (when loading state)
+    void setLastHeadway(SUMOTime headway) {
+        myLastHeadway = headway;
     }
 
     /// @brief get the earliest entry time in seconds
@@ -516,7 +543,8 @@ public:
     }
 
 protected:
-    bool overtake();
+    /// @brief whether veh overtakes the queue's last vehicle, drawn from a number specific to vehicle and segment
+    bool overtake(const MEVehicle* veh) const;
 
     void setSpeedForQueue(double newSpeed, SUMOTime currentTime,
                           SUMOTime blockTime, const std::vector<MEVehicle*>& vehs);
@@ -553,6 +581,24 @@ protected:
     /// @brief check jam-avoidance constraints during insertion
     virtual bool hasSpaceForInsertion(const Queue& q, int qIdx, double newOccupancy, SUMOTime entryTime) const;
 
+    /// @brief whether space vacated by vehicles that left the given queue has not yet reached the upstream end
+    virtual bool hasTravelingGaps(int /*qIdx*/, SUMOTime /*time*/) const {
+        return false;
+    }
+
+    /// @brief the (distance, depth) pairs at which a downstream edge was searched with a given lane reach
+    typedef std::map<std::pair<const MSEdge*, std::vector<int> >, std::vector<std::pair<double, int> > > SearchedMap;
+
+    /** @brief add the queues leading to the successors of the given downstream edge to myFollowerMap
+     * @param[in] edge The downstream edge
+     * @param[in] reach For every lane of myEdge, the lanes of edge that can be reached without changing lanes
+     * @param[in] dist The distance between the end of myEdge and the start of edge
+     * @param[in] lookahead The lookahead distance from the end of myEdge
+     * @param[in] depth The position of edge after myEdge
+     * @param[in, out] searched The searches so far, to skip those that cannot add anything
+     */
+    void addDownstreamFollowers(const MSEdge& edge, const std::vector<int>& reach, const double dist, const double lookahead, const int depth, SearchedMap& searched);
+
 protected:
     /// @brief The microsim edge this segment belongs to
     const MSEdge& myEdge;
@@ -584,6 +630,9 @@ protected:
 
     /// @brief Whether overtaking is permitted on this segment
     bool myOvertaking;
+
+    /// @brief this segment's part of the overtaking draws (hash of edge id and segment index in the upper 32 bits)
+    long long int myOvertakeKey = 0;
     /// @}
 
     /// @brief Headway parameter for computing gross time headyway from net time headway, length and edge speed
@@ -606,6 +655,9 @@ protected:
 
     /// @brief The follower edge to allowed que index mapping for multi queue segments
     std::map<const MSEdge*, int> myFollowerMap;
+
+    /// @brief The number of route edges after myEdge to look up in myFollowerMap
+    int myLookahead = 1;
 
     /// @brief the last headway
     SUMOTime myLastHeadway;

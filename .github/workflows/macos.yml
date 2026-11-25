@@ -12,15 +12,24 @@ on:
     paths-ignore:  # but ignore everything in the docs subfolder
       - 'docs/**'
   schedule:
-    - cron:  '5 2 * * *'
+    - cron:  '5 2 * * 1-6'
+    # weekly clean build (no cache restore)
+    - cron:  '5 2 * * 0'
+
+concurrency:
+  # a push to a branch with a pull request is cancelled by the pull request run
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || (github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name) || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-26]
+        # pull requests only build on macos-26
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-26"]' || '["macos-15","macos-26"]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
     env:
       CCACHE_COMPILERTYPE: clang
 
@@ -35,10 +44,12 @@ jobs:
         ref: ${{ github.ref }}
 
     - name: ccache
-      if: github.event_name != 'schedule'
-      uses: hendrikmuhs/ccache-action@v1.2.24
+      uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ matrix.os }}
+        restore: ${{ github.event.schedule != '5 2 * * 0' }}
+        key: ${{ matrix.os }}-build
+        save: ${{ github.ref == 'refs/heads/main' }}
+        evict-old-files: job
 
     - name: Configuring Python
       uses: actions/setup-python@v7
@@ -46,7 +57,15 @@ jobs:
         python-version: 3.14
 
     - name: Installing dependencies
-      run: sumo/build_config/install_dependencies.sh
+      env:
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_ANALYTICS: 1
+        HOMEBREW_NO_ENV_HINTS: 1
+        HOMEBREW_NO_AUTO_UPDATE: 1
+        SKIP_BREW_UPDATE: 1
+      run: |
+        touch install.marker
+        sumo/build_config/install_dependencies.sh
 
     - name: Building SUMO
       run: |
@@ -71,21 +90,21 @@ jobs:
         name: ${{ matrix.os }}-examples
         path: sumo/docs/examples
 
-    - name: Running texttest
+    - name: Packaging build for test jobs
       run: |
-        export DYLD_FALLBACK_LIBRARY_PATH=/usr/local/lib:$DYLD_FALLBACK_LIBRARY_PATH
-        python3 -m venv testenv
-        source testenv/bin/activate
-        python -m pip install texttest -r sumo/tools/req_ci.txt
-        sumo/tests/runTests.sh -b ci -v ci -finverse $PWD/sumo/tests/filter_files/macos_failures.txt
+        # everything installed to /usr/local (jupedsim and SUMO)
+        find /usr/local \( -type f -o -type l \) -newer install.marker > install-files.txt
+        tar -cPf install.tar -T install-files.txt
+        tar --zstd -cf ${{ matrix.os }}-build.tar.zst --exclude=sumo/.git --exclude=sumo/cmake-build sumo install.tar
 
-    - name: Uploading artifacts (SUMO binaries and FMU)
+    - name: Uploading build for test jobs
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ matrix.os }}-binaries
-        path: sumo/bin
+        path: ${{ matrix.os }}-build.tar.zst
+        archive: false
 
     - name: Creating macOS installer pkg
+      if: github.ref == 'refs/heads/main'
       run: |
         python3 -m venv dmgenv
         dmgenv/bin/python3 -m pip install dmgbuild delocate
@@ -93,7 +112,70 @@ jobs:
         dmgenv/bin/python3 sumo/tools/build_config/buildMacOSInstaller.py --create-framework-pkg
 
     - name: Uploading macOS installer pkg
+      if: github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v7
       with:
         name: ${{ matrix.os }}-installer-unsigned
         path: framework-pkg/*.pkg
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        # pull requests only test on macos-26, the texttest applications are split into shards
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-26"]' || '["macos-15","macos-26"]') }}
+        shard: [complex, tools-traci, other]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+
+    steps:
+    - name: Downloading build
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ matrix.os }}-build.tar.zst
+
+    - name: Unpacking build
+      run: |
+        tar --zstd -xf ${{ matrix.os }}-build.tar.zst
+        sudo tar -xPf install.tar
+
+    - name: Configuring Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: 3.14
+
+    - name: Installing dependencies
+      env:
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_ANALYTICS: 1
+        HOMEBREW_NO_ENV_HINTS: 1
+        HOMEBREW_NO_AUTO_UPDATE: 1
+        SKIP_BREW_UPDATE: 1
+        SKIP_JUPEDSIM: 1
+      run: sumo/build_config/install_dependencies.sh
+
+    - name: Running texttest
+      run: |
+        export DYLD_FALLBACK_LIBRARY_PATH=/usr/local/lib:$DYLD_FALLBACK_LIBRARY_PATH
+        python3 -m venv testenv
+        source testenv/bin/activate
+        python -m pip install texttest -r sumo/tools/req_ci.txt
+        case "${{ matrix.shard }}" in
+          complex) APPS=complex ;;
+          tools-traci) APPS=tools,traci ;;
+          other) APPS=sumo,netconvert,duarouter,dfrouter,jtrrouter,marouter,od2trips,netgen,polyconvert,activitygen,netedit,neteditoutput ;;
+        esac
+        sumo/tests/runTests.sh -b ci -v ci -a $APPS -finverse $PWD/sumo/tests/filter_files/macos_failures.txt
+
+    - name: Compressing test results
+      if: failure()
+      run: 7z a -bso0 -bsp0 texttesttmp-${{ matrix.os }}-${{ matrix.shard }}.zip ~/.texttest/tmp
+
+    - name: Uploading test results
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        path: texttesttmp-${{ matrix.os }}-${{ matrix.shard }}.zip
+        archive: false
+        if-no-files-found: warn

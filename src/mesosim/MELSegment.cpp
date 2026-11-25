@@ -71,8 +71,11 @@ MELSegment::MELSegment(const std::string& id,
                        const int idx,
                        const bool multiQueue,
                        const MesoEdgeType& edgeType):
-    MESegment(id, parent, next, length, speed, idx, multiQueue, edgeType) {
+    MESegment(id, parent, next, length, speed, idx, multiQueue, edgeType),
+    // the gap only has to pass the vehicles that fit into the segment (the remaining length cannot be occupied)
+    myJamLength(MAX2(1., floor(length / DEFAULT_VEH_LENGTH_WITH_GAP)) * DEFAULT_VEH_LENGTH_WITH_GAP) {
     myGapTimes.resize(myQueues.size());
+    myJamGapTimes.resize(myQueues.size(), -1);
 }
 
 
@@ -81,7 +84,8 @@ MELSegment::computeHeadway(Queue& /*q*/, const Queue& /*qNext*/, const MESegment
     // @note: it might seem sensible to check veh->getQueuingTimeLoss() here but
     // then the queing state would be "sticky" because queuingTimeLoss is computed with tau_ff
     // and every leader car that uses tau_jf applies queing timeLoss to it's followers
-    SUMOTime headway = tauWithVehLength(veh->getWaitingTime() > 0 ? myTau_jf : myTau_ff,
+    const SUMOTime waiting = veh->getWaitingTime();
+    SUMOTime headway = tauWithVehLength(waiting > 0 ? myTau_ff + MIN2(waiting, myTau_jf - myTau_ff) : myTau_ff,
                                         veh->getVehicleType().getLengthWithGap(),
                                         veh->getVehicleType().getCarFollowModel().getHeadwayTime());
     if (myTLSPenalty) {
@@ -101,7 +105,14 @@ MELSegment::send(MEVehicle* veh, MESegment* const next, const int nextQIdx, SUMO
     // record time when the gap vacated by ego will reach the upstream end of the segment
     // gaps travel quickly in free flow (the number of gaps and vehicles stays below the segment capacity)
     // but they travel more slowly when queued (startupDelay)
-    gapTimes.insert(gapTimes.begin(), time + (SUMOTime)(myLength * (double)(veh->getQueuingTimeLoss() > 0 ? myTau_jj : myTau_ff) / DEFAULT_VEH_LENGTH_WITH_GAP));
+    const SUMOTime waveTime = (SUMOTime)(myJamLength * (double)(veh->getQueuingTimeLoss() > 0 ? myTau_jj : myTau_ff) / DEFAULT_VEH_LENGTH_WITH_GAP);
+    // the entering vehicle needs this long to drive through the length that cannot be occupied
+    const SUMOTime remainderTime = TIME2STEPS(MAX2(0., myLength - myJamLength) / myEdge.getSpeedLimit());
+    gapTimes.insert(gapTimes.begin(), time + MAX2((SUMOTime)0, waveTime - remainderTime));
+    if (veh->getQueuingTimeLoss() > 0) {
+        // gaps are inserted in order of departure, so this gap is the last one left by a queued vehicle
+        myJamGapTimes[veh->getQueIndex()] = gapTimes.front();
+    }
     MESegment::send(veh, next, nextQIdx, time, reason);
 }
 
@@ -110,31 +121,70 @@ void
 MELSegment::updateEntryBlockTime(SUMOTime time) {
     for (int qIdx = 0; qIdx < (int)myQueues.size(); qIdx++) {
         Queue& q = myQueues[qIdx];
-        GapTimes& gapTimes = myGapTimes[qIdx];
-        while (!gapTimes.empty() && gapTimes.back() <= time) {
-            gapTimes.pop_back();
+        int numGaps = numTravelingGaps(qIdx, time);
+        if (numGaps == 0) {
+            continue;
         }
-        if (!gapTimes.empty() && q.getOccupancy() + (double)gapTimes.size() * DEFAULT_VEH_LENGTH_WITH_GAP > myQueueCapacity) {
+        // gap times are sorted in descending order, the gap which reaches the upstream end first is at the back
+        const GapTimes& gapTimes = myGapTimes[qIdx];
+        SUMOTime unblockTime = gapTimes.back();
+        if (myJamGapTimes[qIdx] > time) {
+            // While a jam discharges, the entering vehicle needs space in addition to the vehicles and the traveling gaps.
+            numGaps++;
+        } else {
+            // In free flow the constraint is exactly binding at capacity (the free-flow headway equals the gap travel
+            // time per vehicle). Since a gap only frees space once it has reached the upstream end, rounding would block
+            // vehicles and cause phantom jams (#18684). The next vehicle cannot follow the entering vehicle before tau_ff
+            // so gaps that arrive within this time are counted as arrived
+            auto it = gapTimes.rbegin();
+            while (it != gapTimes.rend() && *it <= time + myTau_ff) {
+                ++it;
+                numGaps--;
+            }
+            if (it == gapTimes.rend()) {
+                continue;
+            }
+            unblockTime = *it - myTau_ff;
+        }
+        if (q.getOccupancy() + (double)numGaps * DEFAULT_VEH_LENGTH_WITH_GAP > myQueueCapacity) {
             // segment is jammed because the empty spaces have not yet reached the upstream end.
-            q.setEntryBlockTime(MAX2(q.getEntryBlockTime(), gapTimes.back()));
+            q.setEntryBlockTime(MAX2(q.getEntryBlockTime(), unblockTime));
         }
     }
 }
 
 
 bool
-MELSegment::hasSpaceForInsertion(const Queue& q, int qIdx, double /*newOccupancy*/, SUMOTime entryTime) const {
+MELSegment::hasSpaceForInsertion(const Queue& /*q*/, int qIdx, double newOccupancy, SUMOTime entryTime) const {
+    return newOccupancy + (double)numTravelingGaps(qIdx, entryTime) * DEFAULT_VEH_LENGTH_WITH_GAP <= myQueueCapacity;
+}
+
+
+bool
+MELSegment::hasTravelingGaps(int qIdx, SUMOTime time) const {
+    return numTravelingGaps(qIdx, time) > 0;
+}
+
+
+int
+MELSegment::numTravelingGaps(int qIdx, SUMOTime time) const {
     GapTimes& gapTimes = const_cast<GapTimes&>(myGapTimes[qIdx]);
-    while (!gapTimes.empty() && gapTimes.back() <= entryTime) {
+    while (!gapTimes.empty() && gapTimes.back() <= time) {
         gapTimes.pop_back();
     }
-    return q.getOccupancy() + (double)gapTimes.size() * DEFAULT_VEH_LENGTH_WITH_GAP <= myQueueCapacity;
+    return (int)gapTimes.size();
 }
 
 
 std::string
 MELSegment::getQueueExtraState(int qIdx) const {
-    return joinToString(myGapTimes[qIdx], " ");
+    const GapTimes& gapTimes = myGapTimes[qIdx];
+    std::string state = joinToString(gapTimes, " ");
+    if (!gapTimes.empty() && myJamGapTimes[qIdx] >= gapTimes.back()) {
+        // a gap left by a queued vehicle is still traveling
+        state += " j" + toString(myJamGapTimes[qIdx]);
+    }
+    return state;
 }
 
 
@@ -142,8 +192,13 @@ void
 MELSegment::loadQueueExtraState(int qIdx, const std::string& state, SUMOTime offset) {
     GapTimes& gapTimes = myGapTimes[qIdx];
     gapTimes.clear();
+    myJamGapTimes[qIdx] = -1;
     for (const std::string& t : StringTokenizer(state).getVector()) {
-        gapTimes.push_back(StringUtils::toLong(t) - offset);
+        if (t[0] == 'j') {
+            myJamGapTimes[qIdx] = StringUtils::toLong(t.substr(1)) - offset;
+        } else {
+            gapTimes.push_back(StringUtils::toLong(t) - offset);
+        }
     }
 }
 
